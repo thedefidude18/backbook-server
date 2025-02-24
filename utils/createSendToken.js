@@ -6,7 +6,7 @@ const signToken = (id) => {
   });
 };
 
-exports.createSendToken = ({ user, statusCode, res, recivedRequestsCount }) => {
+exports.createSendToken = ({ user, statusCode, res }) => {
   const token = signToken(user._id);
 
   const cookieOptions = {
@@ -15,6 +15,7 @@ exports.createSendToken = ({ user, statusCode, res, recivedRequestsCount }) => {
     ),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
+    sameSite: 'None'
   };
 
   res.cookie('jwt', token, cookieOptions);
@@ -22,19 +23,20 @@ exports.createSendToken = ({ user, statusCode, res, recivedRequestsCount }) => {
   res.status(statusCode).json({
     status: 'success',
     data: {
+      token,
       user: {
         _id: user._id,
         first_name: user.first_name,
         last_name: user.last_name,
         username: user.username,
+        email: user.email,
         photo: user.photo,
         verified: user.verified,
         confirmed: user.confirmed,
-        recivedRequestsCount,
+        recivedRequestsCount: user.recivedRequestsCount,
         unseenMessages: user.unseenMessages,
-        unseenNotification: user.unseenNotification,
-      },
-      token,
-    },
+        unseenNotification: user.unseenNotification
+      }
+    }
   });
 };

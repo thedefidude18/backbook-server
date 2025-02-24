@@ -73,6 +73,10 @@ var userSchema = new mongoose.Schema({
     type: Boolean,
     "default": true,
     select: false
+  },
+  fcmToken: {
+    type: String,
+    select: false
   }
 }, {
   timestamps: true
@@ -80,7 +84,27 @@ var userSchema = new mongoose.Schema({
 
 userSchema.index({
   email: 1
-}); // Add middleware to check password strength on save
+}); // Add password comparison method
+
+userSchema.methods.correctPassword = function _callee(candidatePassword, userPassword) {
+  return regeneratorRuntime.async(function _callee$(_context) {
+    while (1) {
+      switch (_context.prev = _context.next) {
+        case 0:
+          _context.next = 2;
+          return regeneratorRuntime.awrap(bcrypt.compare(candidatePassword, userPassword));
+
+        case 2:
+          return _context.abrupt("return", _context.sent);
+
+        case 3:
+        case "end":
+          return _context.stop();
+      }
+    }
+  });
+}; // Add middleware to check password strength on save
+
 
 userSchema.pre('save', function (next) {
   if (!this.isModified('password')) return next();
@@ -93,33 +117,43 @@ userSchema.pre('save', function (next) {
   next();
 }); // Hash password before saving
 
-userSchema.pre('save', function _callee(next) {
-  return regeneratorRuntime.async(function _callee$(_context) {
+userSchema.pre('save', function _callee2(next) {
+  return regeneratorRuntime.async(function _callee2$(_context2) {
     while (1) {
-      switch (_context.prev = _context.next) {
+      switch (_context2.prev = _context2.next) {
         case 0:
           if (this.isModified('password')) {
-            _context.next = 2;
+            _context2.next = 2;
             break;
           }
 
-          return _context.abrupt("return", next());
+          return _context2.abrupt("return", next());
 
         case 2:
-          _context.next = 4;
+          _context2.next = 4;
           return regeneratorRuntime.awrap(bcrypt.hash(this.password, 12));
 
         case 4:
-          this.password = _context.sent;
+          this.password = _context2.sent;
           this.passwordConfirm = undefined;
           next();
 
         case 7:
         case "end":
-          return _context.stop();
+          return _context2.stop();
       }
     }
   }, null, this);
-});
+}); // Add method to check if password was changed after token was issued
+
+userSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
+  if (this.passwordChangedAt) {
+    var changedTimestamp = parseInt(this.passwordChangedAt.getTime() / 1000, 10);
+    return JWTTimestamp < changedTimestamp;
+  }
+
+  return false;
+};
+
 var User = mongoose.model('User', userSchema);
 module.exports = User;

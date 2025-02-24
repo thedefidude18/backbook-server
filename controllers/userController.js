@@ -506,3 +506,24 @@ exports.seenNotification = catchAsync(async (req, res, next) => {
     },
   });
 });
+
+exports.updateFCMToken = catchAsync(async (req, res, next) => {
+  const { fcmToken } = req.body;
+
+  if (!fcmToken) {
+    return next(new AppError('FCM token is required', 400));
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    { fcmToken },
+    { new: true, runValidators: true }
+  );
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      fcmToken: user.fcmToken
+    }
+  });
+});

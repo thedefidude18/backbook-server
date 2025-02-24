@@ -9,9 +9,6 @@ const AppError = require('./utils/appError');
 const GlobalErrorHandler = require('./controllers/errorController');
 const { createServer } = require('http');
 
-// Add this whitelist definition near the top of the file
-const whitelist = ['http://localhost:3000']; // Add any other allowed origins
-
 const usersRouter = require('./routes/userRoutes');
 const postRoutes = require('./routes/postRoutes');
 const friendsRoutes = require('./routes/friendsRoutes');
@@ -21,8 +18,8 @@ const chatRoutes = require('./routes/chatRoutes');
 const app = express();
 
 app.use(cors({
-  origin: whitelist[0], // Using the first whitelist entry
-  credentials: true
+  origin: process.env.FRONTEND_URL,
+  credentials: true,
 }));
 
 const limiter = rateLimit({
@@ -77,9 +74,8 @@ sio.init(httpServer, {
   pingTimeout: 60000,
   pingInterval: 60000,
   cors: {
-    origin: whitelist,
+    origin: process.env.FRONTEND_URL,
   },
 });
 
-exports.whitelist = whitelist;
 exports.httpServer = httpServer;

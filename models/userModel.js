@@ -70,6 +70,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
     select: false
+  },
+  fcmToken: {
+    type: String,
+    select: false
   }
 }, {
   timestamps: true,
@@ -77,6 +81,11 @@ const userSchema = new mongoose.Schema({
 
 // Add index for email lookups
 userSchema.index({ email: 1 });
+
+// Add password comparison method
+userSchema.methods.correctPassword = async function(candidatePassword, userPassword) {
+  return await bcrypt.compare(candidatePassword, userPassword);
+};
 
 // Add middleware to check password strength on save
 userSchema.pre('save', function(next) {
@@ -97,6 +106,18 @@ userSchema.pre('save', async function(next) {
   this.passwordConfirm = undefined;
   next();
 });
+
+// Add method to check if password was changed after token was issued
+userSchema.methods.changedPasswordAfter = function(JWTTimestamp) {
+  if (this.passwordChangedAt) {
+    const changedTimestamp = parseInt(
+      this.passwordChangedAt.getTime() / 1000,
+      10
+    );
+    return JWTTimestamp < changedTimestamp;
+  }
+  return false;
+};
 
 const User = mongoose.model('User', userSchema);
 module.exports = User;
