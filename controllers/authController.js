@@ -1,143 +1,112 @@
+const crypto = require('crypto');
 const { promisify } = require('util');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
+const { createSendToken } = require('../utils/createSendToken');
 const User = require('../models/userModel');
 const Friend = require('../models/friendsModel');
-const Follow = require('../models/followModel');
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 const Email = require('../utils/email');
-const Chat = require('../models/chatModel');
-const Message = require('../models/messageModel');
-
-const signToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
-  });
-};
-
-const createSendToken = ({ user, statusCode, res, recivedRequestsCount }) => {
-  const token = signToken(user._id);
-
-  res.cookie('jwt', token, {
-    expires: new Date(
-      Date.now() + process.env.JWT_COOKIE_EXPIRES_IN * 24 * 60 * 60 * 1000
-    ),
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: false,
-    sameSite: process.env.NODE_ENV === 'production' ? 'None' : '',
-  });
-
-  user.password = undefined;
-  user.verificationEmailToken = undefined;
-  user.recivedRequestsCount = recivedRequestsCount;
-
-  res.status(statusCode).json({
-    status: 'success',
-    data: {
-      user,
-      token,
-    },
-  });
-};
+const rateLimiter = require('../utils/rateLimiter');
 
 exports.signup = catchAsync(async (req, res, next) => {
-  const {
-    first_name,
-    last_name,
-    username,
-    email,
-    password,
-    passwordConfirm,
-    gender,
-    birth_Year,
-    birth_Month,
-    birth_Day,
-  } = req.body;
+  try {
+    const {
+      first_name,
+      last_name,
+      email,
+      password,
+      passwordConfirm,
+      birth_Year,
+      birth_Month,
+      birth_Day,
+      gender
+    } = req.body;
 
-  const newUser = await User.create({
-    first_name,
-    last_name,
-    username,
-    email,
-    password,
-    passwordConfirm,
-    gender,
-    birth_Year,
-    birth_Month,
-    birth_Day,
-  });
+    // Add input sanitization
+    const sanitizedEmail = email.toLowerCase().trim();
+    const sanitizedFirstName = first_name.trim();
+    const sanitizedLastName = last_name.trim();
 
-  const senderID = newUser.id;
-  const recipientID = '63b9248399f3f6c7ff609510';
-
-  const friendRequest = new Friend({
-    sender: senderID,
-    recipient: recipientID,
-    status: 'accepted',
-  });
-  await friendRequest.save();
-
-  const followRccipient = new Follow({
-    sender: senderID,
-    recipient: recipientID,
-  });
-  await followRccipient.save();
-
-  const verificationEmailToken = newUser.createVerificationEmailToken();
-  await newUser.save({ validateBeforeSave: false });
-  const url = `${process.env.FRONTEND_URL}/activate/${verificationEmailToken}`;
-  await new Email(newUser, url).sendVerificationEmail();
-
-  const chatId = '63e30af0740d080a71d219b5';
-
-  await Chat.findByIdAndUpdate(
-    chatId,
-    {
-      $push: { users: senderID },
-    },
-    {
-      new: true,
+    // Add password strength validation
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return next(new AppError('Password must be at least 8 characters long and contain uppercase, lowercase, number and special character', 400));
     }
-  );
 
-  await Message.create({
-    type: 'info',
-    sender: senderID,
-    content: `${newUser.first_name} ${newUser.last_name} joined the chat`,
-    chat: chatId,
-  });
+    // Add rate limiting for signup attempts (implement with Redis)
+    const signupAttempts = await rateLimiter.checkSignupAttempts(req.ip);
+    if (signupAttempts > 5) {
+      return next(new AppError('Too many signup attempts. Please try again later.', 429));
+    }
 
-  createSendToken({ user: newUser, statusCode: 200, res: res });
+    const newUser = await User.create({
+      first_name: sanitizedFirstName,
+      last_name: sanitizedLastName,
+      email: sanitizedEmail,
+      password,
+      passwordConfirm,
+      birth_Year,
+      birth_Month,
+      birth_Day,
+      gender,
+      username: `${sanitizedFirstName.toLowerCase()}${sanitizedLastName.toLowerCase()}`,
+    });
+
+    // Remove sensitive data
+    newUser.password = undefined;
+    newUser.__v = undefined;
+
+    createSendToken({
+      user: newUser,
+      statusCode: 201,
+      res,
+    });
+
+  } catch (error) {
+    console.error('Signup error:', error);
+    return next(new AppError(error.message || 'Error creating user', 500));
+  }
 });
 
 exports.login = catchAsync(async (req, res, next) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
+    
+    console.log('Login attempt:', { email });
 
-  // check if email and password exist
-  if (!email || !password)
-    return next(new AppError('Please provide email and password', 400));
+    if (!email || !password) {
+      return next(new AppError('Please provide email and password', 400));
+    }
 
-  // check if user exist and password is correct
-  const user = await User.findOne({ email }).select(
-    'first_name last_name username photo verified password confirmed recivedRequestsCount unseenMessages unseenNotification'
-  );
+    // Check rate limiting
+    const loginAttempts = await rateLimiter.checkLoginAttempts(req.ip, email);
+    if (loginAttempts > 5) {
+      return next(new AppError('Too many login attempts. Please try again in 15 minutes.', 429));
+    }
 
-  if (!user || !(await user.correctPassword(password, user.password)))
-    return next(new AppError('Incorrect email or password', 401));
+    // Sanitize email
+    const sanitizedEmail = email.toLowerCase().trim();
 
-  const recivedRequestsCount = await Friend.countDocuments({
-    recipient: user.id,
-    status: 'pending',
-  });
+    const user = await User.findOne({ email: sanitizedEmail }).select(
+      '+password first_name last_name username photo verified confirmed recivedRequestsCount unseenMessages unseenNotification'
+    );
 
-  // is everything okay , send jwt to the client
-  createSendToken({
-    user: user,
-    statusCode: 201,
-    res: res,
-    recivedRequestsCount,
-  });
+    if (!user || !(await user.correctPassword(password, user.password))) {
+      return next(new AppError('Incorrect email or password', 401));
+    }
+
+    // Create token and send response
+    createSendToken({
+      user,
+      statusCode: 200,
+      res,
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    return next(new AppError('Error during login', 500));
+  }
 });
 
 exports.ping = catchAsync(async (req, res, next) => {

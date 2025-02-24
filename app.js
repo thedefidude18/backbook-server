@@ -9,6 +9,9 @@ const AppError = require('./utils/appError');
 const GlobalErrorHandler = require('./controllers/errorController');
 const { createServer } = require('http');
 
+// Add this whitelist definition near the top of the file
+const whitelist = ['http://localhost:3000']; // Add any other allowed origins
+
 const usersRouter = require('./routes/userRoutes');
 const postRoutes = require('./routes/postRoutes');
 const friendsRoutes = require('./routes/friendsRoutes');
@@ -17,45 +20,10 @@ const chatRoutes = require('./routes/chatRoutes');
 
 const app = express();
 
-const whitelist = [
-  'http://127.0.0.1:3000',
-  'http://192.168.1.2:3000',
-  'http://192.168.1.6:3000',
-  'http://192.168.1.2:8000',
-  'http://localhost:3000',
-  'https://backbook.vercel.app',
-  'https://backbook-api.cyclic.app',
-];
-const corsOptions = {
-  credentials: true,
-  origin: function (origin, callback) {
-    if (!origin) {
-      //for bypassing postman req with  no origin
-      return callback(null, true);
-    }
-    if (whitelist.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-};
-
-// const whitelist = ['http://127.0.0.1:3000', 'http://192.168.1.2:3000'];
-// const corsOptions = {
-//   origin: function (origin, callback) {
-//     if (!origin) {
-//       //  for bypassing postman req with  no origin 0
-//       return callback(null, true);
-//     }
-//     if (whitelist.indexOf(origin) !== -1) {
-//       callback(null, true);
-//     } else {
-//       callback(new Error('Not allowed by CORS'));
-//     }
-//   },
-// };
-app.use(cors(corsOptions));
+app.use(cors({
+  origin: whitelist[0], // Using the first whitelist entry
+  credentials: true
+}));
 
 const limiter = rateLimit({
   windowMs: 60 * 60 * 1000 * 24,
