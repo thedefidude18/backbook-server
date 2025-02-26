@@ -33,6 +33,7 @@ const messageSchema = mongoose.Schema(
   { timestamps: true }
 );
 
+
 messageSchema.pre(/^find/, async function (next) {
   this.populate({
     path: 'sender',
@@ -46,56 +47,51 @@ messageSchema.statics.updateLatestMessage = async function (
   messageId,
   th
 ) {
-  const existingeGroupChat = await Chat.findById(chatId);
-  existingeGroupChat.latestMessage = messageId;
-  await existingeGroupChat.save();
+  try {
+    const existingeGroupChat = await Chat.findById(chatId);
+    if (!existingeGroupChat) {
+      console.error('Chat not found:', chatId);
+      return;
+    }
+    
+    existingeGroupChat.latestMessage = messageId;
+    await existingeGroupChat.save();
 
-  const userId = existingeGroupChat.users.filter((user) => {
-    return user.toString() !== th.sender._id.toString();
-  });
+    const userId = existingeGroupChat.users.filter((user) => {
+      return user.toString() !== th.sender._id.toString();
+    });
 
-  const result = await Chat.aggregate([
-    {
-      $match: {
-        users: {
-          $elemMatch: {
-            $eq: mongoose.Types.ObjectId(userId[0]),
-          },
-        },
-      },
-    },
-    {
-      $lookup: {
-        from: 'messages',
-        localField: 'latestMessage',
-        foreignField: '_id',
-        as: 'latestMessage',
-      },
-    },
-    {
-      $unwind: '$latestMessage',
-    },
-    {
-      $match: {
-        'latestMessage.seen': 'unseen',
-      },
-    },
-    {
-      $match: {
-        'latestMessage.sender': {
-          $ne: mongoose.Types.ObjectId(userId[0]),
-        },
-      },
-    },
-    {
-      $count: 'count',
-    },
-  ]);
+    if (!userId || userId.length === 0) {
+      console.error('No recipient user found');
+      return;
+    }
 
-  await User.findByIdAndUpdate(userId[0], {
-    unseenMessages: result[0]?.count || 0,
-  });
+
+ const result = await Chat.aggregate([
+      {
+        $match: {
+          users: { $in: [new mongoose.Types.ObjectId(userId[0])] },
+          latestMessage: { $exists: true }
+        }
+      },
+      {
+        $match: {
+          'latestMessage.seen': 'unseen'
+        }
+      },
+      {
+        $count: 'count',
+      },
+    ]);
+
+    await User.findByIdAndUpdate(userId[0], {
+      unseenMessages: result[0]?.count || 0,
+    });
+  } catch (error) {
+    console.error('Error in updateLatestMessage:', error);
+  }
 };
+
 
 messageSchema.post('save', async function () {
   // this points to current review

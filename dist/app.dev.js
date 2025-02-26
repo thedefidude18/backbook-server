@@ -68,7 +68,13 @@ app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/posts', postRoutes);
 app.use('/api/v1/friends', friendsRoutes);
 app.use('/api/v1/chats', chatRoutes);
-app.use('/api/v1/messages', messagesRoutes); // app.use((req, res, next) => {
+app.use('/api/v1/messages', messagesRoutes);
+app.get('/api/v1/test', function (req, res) {
+  res.status(200).json({
+    status: 'success',
+    message: 'API is working correctly'
+  });
+}); // app.use((req, res, next) => {
 //   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 // });
 
