@@ -14,6 +14,8 @@ const postRoutes = require('./routes/postRoutes');
 const friendsRoutes = require('./routes/friendsRoutes');
 const messagesRoutes = require('./routes/messagesRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const eventRoutes = require('./routes/eventRoutes');
+const challengeRoutes = require('./routes/challengeRoutes');
 
 const app = express();
 
@@ -56,6 +58,8 @@ app.use('/api/v1/posts', postRoutes);
 app.use('/api/v1/friends', friendsRoutes);
 app.use('/api/v1/chats', chatRoutes);
 app.use('/api/v1/messages', messagesRoutes);
+app.use('/api/v1/events', eventRoutes);
+app.use('/api/v1/challenges', challengeRoutes);
 
 app.get('/api/v1/test', (req, res) => {
   res.status(200).json({

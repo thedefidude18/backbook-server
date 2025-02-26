@@ -31,6 +31,10 @@ var messagesRoutes = require('./routes/messagesRoutes');
 
 var chatRoutes = require('./routes/chatRoutes');
 
+var eventRoutes = require('./routes/eventRoutes');
+
+var challengeRoutes = require('./routes/challengeRoutes');
+
 var app = express();
 app.use(cors({
   origin: process.env.FRONTEND_URL,
@@ -69,6 +73,8 @@ app.use('/api/v1/posts', postRoutes);
 app.use('/api/v1/friends', friendsRoutes);
 app.use('/api/v1/chats', chatRoutes);
 app.use('/api/v1/messages', messagesRoutes);
+app.use('/api/v1/events', eventRoutes);
+app.use('/api/v1/challenges', challengeRoutes);
 app.get('/api/v1/test', function (req, res) {
   res.status(200).json({
     status: 'success',
