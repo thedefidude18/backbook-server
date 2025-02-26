@@ -1,92 +1,54 @@
-const path = require('path');
 const express = require('express');
-const cors = require('cors');
-const xss = require('xss-clean');
-const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
-const AppError = require('./utils/appError');
-const GlobalErrorHandler = require('./controllers/errorController');
-const { createServer } = require('http');
-
-const usersRouter = require('./routes/userRoutes');
-const postRoutes = require('./routes/postRoutes');
-const friendsRoutes = require('./routes/friendsRoutes');
-const messagesRoutes = require('./routes/messagesRoutes');
-const chatRoutes = require('./routes/chatRoutes');
-const eventRoutes = require('./routes/eventRoutes');
-const challengeRoutes = require('./routes/challengeRoutes');
-
+const cookieParser = require('cookie-parser');
+const cors = require('cors');
+const xss = require('xss-clean');
+const http = require('http');
 const app = express();
 
-app.use(cors({
-  origin: process.env.FRONTEND_URL,
-  credentials: true,
-}));
-
-const limiter = rateLimit({
-  windowMs: 60 * 60 * 1000 * 24,
-  max: 20,
-
+// Add a global rate limiter for all API routes
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
   handler: (request, response, next, options) =>
     response.status(options.statusCode).json({
-      status: 'fail ',
-      message:
-        'You can only post 15 posts per day and you have reached the limit. You can post again tomorrow, have fun 😉',
+      status: 'fail',
+      message: 'Too many requests, please try again later.',
     }),
 });
 
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
+// Create a specific limiter for post creation
+const postLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 post creations per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many posts created from this IP, please try again after 15 minutes',
+});
 
-app.use('/api/v1/posts/createPost', limiter);
+// Apply the global rate limiter to all API routes
+app.use('/api/v1/', globalLimiter);
 
-app.use(express.json({ limit: '5000kb' }));
-app.use(express.urlencoded({ extended: true, limit: '5000kb' }));
+// Apply the specific rate limiter for post creation
+app.use('/api/v1/posts/createPost', postLimiter);
+
+// Add CORS middleware
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+  credentials: true
+}));
+
+// Add other middleware
+app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
+app.use(morgan('dev'));
 app.use(xss());
 
-app.set('view engine', 'pug');
+// Create HTTP server
+const httpServer = http.createServer(app);
 
-// app.use(express.static('public'));
-
-// app.use(express.static(path.join(__dirname, 'build')));
-
-app.use('/api/v1/users', usersRouter);
-app.use('/api/v1/posts', postRoutes);
-app.use('/api/v1/friends', friendsRoutes);
-app.use('/api/v1/chats', chatRoutes);
-app.use('/api/v1/messages', messagesRoutes);
-app.use('/api/v1/events', eventRoutes);
-app.use('/api/v1/challenges', challengeRoutes);
-
-app.get('/api/v1/test', (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'API is working correctly'
-  });
-});
-
-// app.use((req, res, next) => {
-//   res.sendFile(path.join(__dirname, 'build', 'index.html'));
-// });
-
-app.all('*', (req, res, next) => {
-  next(new AppError(`Can't find ${req.originalUrl}`, 404));
-});
-
-app.use(GlobalErrorHandler);
-
-const httpServer = createServer(app);
-const sio = require('./utils/socket');
-
-sio.init(httpServer, {
-  pingTimeout: 60000,
-  pingInterval: 60000,
-  cors: {
-    origin: process.env.FRONTEND_URL,
-  },
-});
-
-exports.httpServer = httpServer;
+// Export both app and httpServer
+module.exports = { app, httpServer };

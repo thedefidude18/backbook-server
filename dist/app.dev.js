@@ -1,102 +1,65 @@
 "use strict";
 
-var path = require('path');
-
 var express = require('express');
-
-var cors = require('cors');
-
-var xss = require('xss-clean');
-
-var cookieParser = require('cookie-parser');
 
 var rateLimit = require('express-rate-limit');
 
 var morgan = require('morgan');
 
-var AppError = require('./utils/appError');
+var cookieParser = require('cookie-parser');
 
-var GlobalErrorHandler = require('./controllers/errorController');
+var cors = require('cors');
 
-var _require = require('http'),
-    createServer = _require.createServer;
+var xss = require('xss-clean');
 
-var usersRouter = require('./routes/userRoutes');
+var http = require('http');
 
-var postRoutes = require('./routes/postRoutes');
+var app = express(); // Add a global rate limiter for all API routes
 
-var friendsRoutes = require('./routes/friendsRoutes');
-
-var messagesRoutes = require('./routes/messagesRoutes');
-
-var chatRoutes = require('./routes/chatRoutes');
-
-var eventRoutes = require('./routes/eventRoutes');
-
-var challengeRoutes = require('./routes/challengeRoutes');
-
-var app = express();
-app.use(cors({
-  origin: process.env.FRONTEND_URL,
-  credentials: true
-}));
-var limiter = rateLimit({
-  windowMs: 60 * 60 * 1000 * 24,
-  max: 20,
+var globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  // 15 minutes
+  max: 100,
+  // Limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
   handler: function handler(request, response, next, options) {
     return response.status(options.statusCode).json({
-      status: 'fail ',
-      message: 'You can only post 15 posts per day and you have reached the limit. You can post again tomorrow, have fun 😉'
+      status: 'fail',
+      message: 'Too many requests, please try again later.'
     });
   }
-});
+}); // Create a specific limiter for post creation
 
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
+var postLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  // 15 minutes
+  max: 5,
+  // Limit each IP to 5 post creations per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many posts created from this IP, please try again after 15 minutes'
+}); // Apply the global rate limiter to all API routes
 
-app.use('/api/v1/posts/createPost', limiter);
+app.use('/api/v1/', globalLimiter); // Apply the specific rate limiter for post creation
+
+app.use('/api/v1/posts/createPost', postLimiter); // Add CORS middleware
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+  credentials: true
+})); // Add other middleware
+
 app.use(express.json({
-  limit: '5000kb'
-}));
-app.use(express.urlencoded({
-  extended: true,
-  limit: '5000kb'
+  limit: '10mb'
 }));
 app.use(cookieParser());
-app.use(xss());
-app.set('view engine', 'pug'); // app.use(express.static('public'));
-// app.use(express.static(path.join(__dirname, 'build')));
+app.use(morgan('dev'));
+app.use(xss()); // Create HTTP server
 
-app.use('/api/v1/users', usersRouter);
-app.use('/api/v1/posts', postRoutes);
-app.use('/api/v1/friends', friendsRoutes);
-app.use('/api/v1/chats', chatRoutes);
-app.use('/api/v1/messages', messagesRoutes);
-app.use('/api/v1/events', eventRoutes);
-app.use('/api/v1/challenges', challengeRoutes);
-app.get('/api/v1/test', function (req, res) {
-  res.status(200).json({
-    status: 'success',
-    message: 'API is working correctly'
-  });
-}); // app.use((req, res, next) => {
-//   res.sendFile(path.join(__dirname, 'build', 'index.html'));
-// });
+var httpServer = http.createServer(app); // Export both app and httpServer
 
-app.all('*', function (req, res, next) {
-  next(new AppError("Can't find ".concat(req.originalUrl), 404));
-});
-app.use(GlobalErrorHandler);
-var httpServer = createServer(app);
-
-var sio = require('./utils/socket');
-
-sio.init(httpServer, {
-  pingTimeout: 60000,
-  pingInterval: 60000,
-  cors: {
-    origin: process.env.FRONTEND_URL
-  }
-});
-exports.httpServer = httpServer;
+module.exports = {
+  app: app,
+  httpServer: httpServer
+};
